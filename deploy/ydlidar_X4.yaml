@@ -1,0 +1,30 @@
+# YDLIDAR X4 參數（2018 硬體版 FW1.5，本車實測可用）
+# 來源：Pi ~/ros2_ws/src/ydlidar_ros2_driver/params/X4.yaml（2026-07-09 匯出）
+#
+# ⚠ bringup.launch.py 會覆蓋以下兩個關鍵參數（勿依賴本檔的原值）：
+#   port              → /dev/ydlidar（本檔寫死 /dev/ttyUSB0 是錯的，那是 STM32；靠 udev 固定名才對）
+#   fixed_resolution  → false（已驗證能出圖；true 會 "Real points>fixed" 丟點）
+# support_motor_dtr: true 是這顆 2018 X4 的關鍵——馬達嚴格靠 DTR 開關（見 ros2_ws/tools/patch_ydlidar_sdk_dtr.py）。
+ydlidar_ros2_driver_node:
+  ros__parameters:
+    port: /dev/ttyUSB0
+    frame_id: laser_frame
+    ignore_array: ""
+    baudrate: 128000
+    lidar_type: 1
+    device_type: 0
+    sample_rate: 5
+    abnormal_check_count: 4
+    fixed_resolution: false
+    reversion: true
+    inverted: true
+    auto_reconnect: true
+    isSingleChannel: false
+    intensity: false
+    support_motor_dtr: true
+    angle_max: 180.0
+    angle_min: -180.0
+    range_max: 12.0
+    range_min: 0.1
+    frequency: 10.0
+    invalid_range_is_inf: false

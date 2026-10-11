@@ -1,0 +1,40 @@
+{
+  "_comment": "光達安裝位姿的單一真相源（base_link -> laser_frame 靜態 TF）。離線建圖腳本與任何需要此值的工具一律讀這裡，禁止各自抄一份——2026-07-20 的坑就是 car1 換 C1 時改了共用預設值，car2 照舊跑導致地圖偏 6.7cm 且完全不報錯。",
+  "_consistency": "profiles.c1 必須與 bringup.launch.py 的 laser_x/laser_z/laser_yaw 預設值逐項相同，由 test/test_lidar_profiles.py 鎖住。改其中一邊而不改另一邊會讓測試紅。",
+  "_units": "x/z 公尺（x＝後軸往前為正、z＝離地），yaw 弧度",
+  "profiles": {
+    "c1": {
+      "desc": "car1 現役 RPLIDAR C1（2026-07-20 上線）。零度朝車尾故 yaw=180°。",
+      "laser_x": 0.19,
+      "laser_z": 0.155,
+      "laser_yaw": 3.14159265,
+      "measured": "2026-07-20 捲尺實測，差分定位驗證朝向"
+    },
+    "rplidar": {
+      "desc": "car2 RPLIDAR A1M8。與 C1 同為反裝（零度朝車尾），但裝位不同。",
+      "laser_x": 0.123,
+      "laser_z": 0.185,
+      "laser_yaw": 3.14159265,
+      "measured": "2026-07-17 差分定位實測 180°；裝位沿用 X4 原位"
+    },
+    "ydlidar": {
+      "desc": "退役的 YDLIDAR X4（car1 舊光達）。零度朝車頭，yaw=0。僅供重跑舊 bag。",
+      "laser_x": 0.123,
+      "laser_z": 0.185,
+      "laser_yaw": 0.0,
+      "measured": "2026-07-08 捲尺實測"
+    }
+  },
+  "_bag_hint": {
+    "_comment": "既有 bag 各自是用哪顆光達錄的——選錯 profile 會讓重建圖歪掉且不報錯。",
+    "c1_living1": "c1",
+    "c1_map1": "c1",
+    "c1_map2": "c1",
+    "map1": "ydlidar",
+    "map2": "ydlidar",
+    "map3": "ydlidar",
+    "map5": "ydlidar",
+    "car2_living1": "rplidar",
+    "car2_map1": "rplidar"
+  }
+}

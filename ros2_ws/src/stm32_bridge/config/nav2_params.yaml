@@ -1,0 +1,353 @@
+# ============================================================================
+# Nav2 單車自主導航參數（Ackermann／STM32 自走車）
+# 建立：2026-07-12。來源＝Jazzy nav2_bringup 官方範本 + 舊 ROS1 黃金參數移植
+#   (ros/stm32_bridge/config/*.yaml、teb_local_planner_params.yaml)。
+#
+# 本車關鍵事實（決定下方多處偏離官方範本）：
+#   - 阿克曼前輪轉向：**不能原地旋轉**（RPP use_rotate_to_heading:false、AMCL 仍用差速噪聲模型）
+#   - 運動學：wheelbase 0.235 m、max_steer 30deg -> 最小轉彎半徑 0.407 m
+#     (follow_math.min_turn_radius；舊 TEB 寫 0.35 偏小，不採用)
+#   - frame：map -> odom(EKF) -> base_link(EKF) -> laser_frame(靜態 TF)。base_link 不是 base_footprint。
+#   - /scan：BEST_EFFORT、frame_id=laser_frame、~7.9Hz(X4；C1 到貨後升 10Hz)
+#   - /cmd_vel：bridge 訂閱後夾限 v<=0.5 / w<=2.0 + dead-man 0.5s；
+#     韌體 bicycle model 的 δ 會飽和在 ±30deg == 最小轉彎半徑的**硬保護**(RPP 送過彎指令也不會超出車能力)
+#
+# ⚠ namespace：本檔是**單車版**(頂層具名 key，如官方單機範本)。雙車化時不要硬套此檔——
+#   參照 nav2_bringup 的 nav2_multirobot_params_*.yaml + bringup.launch.py 的 TF remap 慣例
+#   (/tf->tf、/tf_static->tf_static)。當前 Nav2 定位為單車主線，不預先為雙車抽象(YAGNI)。
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 定位：AMCL(缺口3 方案A)。舊 ROS1 專題已驗收(收斂、likelihood_field、500-2000 粒子)。
+#   它負責發 map->odom TF(補上目前懸空的 TF 樹最上層)。
+# ----------------------------------------------------------------------------
+amcl:
+  ros__parameters:
+    base_frame_id: "base_link"          # 本車是 base_link(非範本 base_footprint)
+    odom_frame_id: "odom"
+    global_frame_id: "map"
+    scan_topic: scan
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"  # AMCL 只有 Diff/Omni；差速噪聲模型對阿克曼 odom 同樣適用
+    # ⚠ 啟動競態（2026-07-20 實跑踩到）：AMCL 沒有初始位置就不發 map->odom TF，
+    #   global_costmap 等不到 map 座標系 → planner_server 啟用逾時 → lifecycle_manager
+    #   「Failed to bring up all requested nodes. Aborting bringup.」整批放棄。
+    #   而且事後補送 /initialpose 也救不回來（管理員重跑 STARTUP 會對已 active 的
+    #   map_server 再 configure 一次而報錯）。故一律讓 AMCL 開機就自帶初始位置。
+    #   數值由 launch 的 init_x/init_y/init_yaw 覆寫，預設＝地圖原點。
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+    laser_model_type: "likelihood_field"                    # 對齊舊專題(論文 §3.2.3)
+    laser_max_range: 12.0               # X4 ~10m 有效(C1 12m)；範本 100 對小地圖無意義
+    laser_min_range: 0.15
+    max_beams: 60
+    min_particles: 500
+    max_particles: 2000                 # 對齊舊專題 500-2000
+    update_min_a: 0.2
+    update_min_d: 0.20                  # 每移動 0.2m 或轉 0.2rad 重採樣一次(小車小空間)
+    resample_interval: 1
+    transform_tolerance: 1.0
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    lambda_short: 0.1
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    sigma_hit: 0.2
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    save_pose_rate: 0.5
+    tf_broadcast: true
+
+# ----------------------------------------------------------------------------
+# 行為樹導航器
+# ----------------------------------------------------------------------------
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+
+# ----------------------------------------------------------------------------
+# 局部控制器：RPP(Regulated Pure Pursuit)。決策已定(起手包)：Ackermann 友善、Jazzy 內建免補丁、
+#   與 follow_math 純追蹤同源。**改掉範本預設的 MPPI**。
+# ----------------------------------------------------------------------------
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    costmap_update_timeout: 0.30
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    use_realtime_priority: false
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      # 演進：0.25 →(2026-07-20 換 Smac 後收緊)→ 0.15。
+      # ⚠ 論文 §3.2.3 驗收規格是 <0.1m / <5deg(0.087rad)。位置已接近，朝向規格
+      #   在 1.6 m² 空間對阿克曼車不可能達成，須在走廊/實驗室等大空間驗收。
+      xy_goal_tolerance: 0.15
+      # ⚠ 阿克曼車＋小空間的實測教訓（2026-07-20 首次 Nav2 實跑）：
+      #   原值 0.25 rad(14.3°) 導致「位置到了、朝向喬不出來」→ 車在原地反覆前進後退
+      #   （使用者看到的「往後調整」＝recovery backup），最後 bt_navigator 判 FAILED。
+      #   實測記錄：剩餘距離一路縮到 0.03m（位置達標），隨後在 0.03~0.28m 間震盪約 20 次後放棄。
+      #   根因＝阿克曼車不能原地轉，改變朝向要 K 字倒車；本房間可走僅約 1.6 m²、
+      #   車最小迴轉半徑 0.41 m，物理上喬不動。放寬到 45°。
+      #   ⚠ 若在大空間（走廊/實驗室）驗收，應再收緊以逼近論文 §3.2.3 的 <5° 規格。
+      # 演進：0.25(14.3°) NavFn 時代收不了尾 → 0.785(45°) 放寬求通過
+      #      → 0.35(20°)（2026-07-20 換 Smac + REEDS_SHEPP + allow_reversing 後收緊）。
+      #      關鍵：能收緊是因為**規劃器會規劃倒車**，車有能力在終點喬方向，不再是靠放寬過關。
+      yaw_goal_tolerance: 0.35
+
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.35          # 安全 <=0.5；起步保守
+      # ⚠ 前瞻距離必須小於「空間尺度」（2026-07-20 調整）：原值 0.40/0.60/0.90 在
+      #   1.95×2.15 m 的房間裡幾乎等同整個房間寬度 → 控制器盯著遠處的點、忽略眼前的彎，
+      #   是「開過頭再繞回來」的幫兇之一。縮到 0.25/0.35/0.60 讓它跟得緊。
+      #   ⚠ 大空間驗收時可調回原值（前瞻太短在高速下會蛇行）。
+      min_lookahead_dist: 0.25
+      lookahead_dist: 0.35
+      max_lookahead_dist: 0.60
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: true   # 隨速縮放(呼應 follow_math.adaptive_lookahead)
+      transform_tolerance: 0.2
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.2
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: false
+      regulated_linear_scaling_min_radius: 0.45  # 接近車最小轉彎半徑(0.407)時就減速
+      regulated_linear_scaling_min_speed: 0.15
+      use_rotate_to_heading: false      # ⚠ 阿克曼**不能**原地轉頭(與 allow_reversing 不可同時 true)
+      # ⚠ 2026-07-20 由 false 改 true：全域規劃換 Smac + REEDS_SHEPP 後會產出含倒車段的
+      #   路徑，控制器不開這個就跟不了那些路徑段。兩者**必須成對**開啟。
+      #   注意這與 V2/V3 跟隨的「leader 禁倒車」慣例不衝突——那是跟隨用的另一條路徑，
+      #   此處只影響 Nav2 自主導航。360° 光達在倒車時仍有後方偵測能力。
+      allow_reversing: true
+      max_angular_accel: 1.0
+      max_robot_pose_search_dist: 10.0
+      use_interpolation: true
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.6
+
+# ----------------------------------------------------------------------------
+# 局部代價地圖(odom 系、rolling 3x3)。移植 local_costmap_params + costmap_common。
+# ----------------------------------------------------------------------------
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      # 精確 footprint 取代 robot_radius(阿克曼車非圓形)：前0.28/後-0.06/半寬0.12(含安全邊距)
+      footprint: "[[0.28,0.12],[0.28,-0.12],[-0.06,-0.12],[-0.06,0.12]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"   # 2D LiDAR 用 ObstacleLayer(不需範本的 3D VoxelLayer)
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          sensor_frame: laser_frame
+          data_type: "LaserScan"
+          marking: True
+          clearing: True
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5        # 舊 ROS1 obstacle_range
+          obstacle_min_range: 0.0
+          raytrace_max_range: 3.0        # 舊 ROS1 raytrace_range
+          raytrace_min_range: 0.0
+          # ⚠⚠ /scan 是 BEST_EFFORT publisher。若 costmap 一直收不到障礙(RViz 看不到藍點)、
+          #    log 出現 "No laser scan received"，**第一個查這裡的 QoS**(起手包接點2)。
+          #    Jazzy nav2 obstacle source 預設會用 sensor QoS，通常可直接收；收不到再顯式設 qos。
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0         # 舊 ROS1 值
+        inflation_radius: 0.25           # 舊值 0.1 對車半寬 0.12 太貼；範本 0.7 對 4m 小房間太大。折衷起步值。
+      always_send_full_costmap: True
+
+# ----------------------------------------------------------------------------
+# 全域代價地圖(map 系、static)。移植 global_costmap_params + costmap_common。
+# ----------------------------------------------------------------------------
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 0.5
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      track_unknown_space: true
+      footprint: "[[0.28,0.12],[0.28,-0.12],[-0.06,-0.12],[-0.06,0.12]]"
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          sensor_frame: laser_frame
+          data_type: "LaserScan"
+          marking: True
+          clearing: True
+          max_obstacle_height: 2.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.25
+      always_send_full_costmap: True
+
+# ----------------------------------------------------------------------------
+# 靜態地圖伺服器。yaml_filename 由 launch 的 map:= 參數覆蓋(Pi 上預設 ~/maps/map1.yaml)。
+# ----------------------------------------------------------------------------
+map_server:
+  ros__parameters:
+    yaml_filename: ""
+
+map_saver:
+  ros__parameters:
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True
+
+# ----------------------------------------------------------------------------
+# 全域規劃：Smac Hybrid-A*（2026-07-20 由 NavFn 升級，實跑失敗後定案）
+#
+# 為什麼換掉 NavFn（實測證據，非理論）：NavFn 是格點 A*，**把車當成能往任何方向移動的點**，
+# 不吃車輛運動學 → 規劃出超過最小轉彎半徑 0.407 m 的急彎 → RPP 跟不上 → 車開過頭 →
+# 繞一大圈回來 → 再過頭。監看實測：剩餘距離 0.57→0.35 後**反彈到 0.85**，
+# 來回三次後 bt_navigator 判 FAILED（使用者描述的「分 2、3 次才到」就是這個繞圈）。
+#
+# Smac Hybrid-A* 在搜尋時就套用 minimum_turning_radius，產出的路徑**車一定開得出來**。
+# ⚠ motion_model 選 REEDS_SHEPP（非註解原本建議的 DUBIN）：DUBIN 只能前進，
+#   在 1.6 m² 空間裡幾乎必然無解；REEDS_SHEPP 允許規劃倒車段（K 字迴轉），
+#   這正是小空間唯一的出路。連帶 RPP 的 allow_reversing 必須一起開（見 FollowPath）。
+# ⚠ allow_unknown 改 false：避免把路徑規劃穿過灰色未探索區（車會開進沒掃過的地方）。
+# ----------------------------------------------------------------------------
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 1.0
+    GridBased:
+      plugin: "nav2_smac_planner::SmacPlannerHybrid"
+      tolerance: 0.25
+      allow_unknown: false                  # 不規劃穿越未探索區
+      max_iterations: 1000000
+      max_planning_time: 5.0
+      motion_model_for_search: "REEDS_SHEPP"  # 允許倒車段；小空間必需
+      angle_quantization_bins: 72
+      minimum_turning_radius: 0.407         # ← 阿克曼真正的約束（L=0.235, δmax=30°）
+      reverse_penalty: 2.0                  # 倒車不禁止但加權，優先前進解
+      change_penalty: 0.0
+      non_straight_penalty: 1.2
+      cost_penalty: 2.0
+      analytic_expansion_ratio: 3.5
+      smooth_path: true
+
+# --- (退回用) 原 NavFn 設定，若 Smac 在大空間反而更慢可換回 ---
+# planner_server:
+#   ros__parameters:
+#     expected_planner_frequency: 1.0
+#     planner_plugins: ["GridBased"]
+#     costmap_update_timeout: 1.0
+#     GridBased:
+#       plugin: "nav2_navfn_planner::NavfnPlanner"
+#       tolerance: 0.5
+#       use_astar: true
+#       allow_unknown: true
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+# ----------------------------------------------------------------------------
+# 復原行為。⚠ 阿克曼**不能 spin**(原地旋轉)——保留 spin 節點是為了讓官方預設 BT 不因缺節點報錯，
+#   但實際觸發時韌體會把 v=0/w大 的指令變成「前輪打死、車幾乎不動」(無效但無害)。
+#   若實跑發現 recovery 卡在 spin，改用不含 spin 的自訂 BT xml。backup/drive_on_heading 對阿克曼有效。
+# ----------------------------------------------------------------------------
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+
+waypoint_follower:
+  ros__parameters:
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200

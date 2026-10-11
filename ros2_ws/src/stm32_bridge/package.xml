@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<package format="3">
+  <name>stm32_bridge</name>
+  <version>0.1.0</version>
+  <description>STM32 自走車 ROS2 橋接：讀自訂 UART $FBK 協定，發布 /odom、/imu/data 與 odom-&gt;base_link TF（Phase 0：只讀不送）。</description>
+  <maintainer email="180163860+hnchou0502@users.noreply.github.com">haoningrb</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-numpy</exec_depend><!-- map_merge_live/merge_math（Codex F6，2026-07-21） -->
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- Nav2 單車自主導航（nav2.launch.py / config/nav2_params.yaml）；Pi 上 apt navigation2 已裝 -->
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_smoother</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_waypoint_follower</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+  <exec_depend>nav2_smac_planner</exec_depend>
+
+  <!-- EX1–EX3 自主探索（Codex F5，2026-08-11）：以下都是**直接**依賴，缺了在乾淨環境
+       跑 rosdep／colcon 會裝不全。先前 Pi 能跑只是因為手動裝了整套 Nav2。
+         nav2_msgs          frontier_explorer.py 直接 import NavigateToPose action
+         lifecycle_msgs     nav2.launch.py 直接用 Transition 驅動 slam_toolbox 生命週期
+         slam_toolbox       nav2.launch.py 的 slam:=true 分支直接啟動 async_slam_toolbox_node
+         ament_index_python nav2/explore launch 直接用 get_package_share_directory -->
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

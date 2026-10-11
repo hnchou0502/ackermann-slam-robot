@@ -1,0 +1,11 @@
+obstacle_range: 2.5
+raytrace_range: 3.0
+# 根據你的實測圖紙：長 0.337m, 寬 0.191m
+# 前距 0.28, 後距 0.06, 寬 0.12 (含安全邊距)
+footprint: [[0.28, 0.12], [0.28, -0.12], [-0.06, -0.12], [-0.06, 0.12]]
+
+inflation_radius: 0.1
+cost_scaling_factor: 5.0
+
+observation_sources: scan
+scan: {sensor_frame: laser_frame, data_type: LaserScan, topic: /scan, marking: true, clearing: true}

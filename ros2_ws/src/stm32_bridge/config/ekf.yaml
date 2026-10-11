@@ -1,0 +1,56 @@
+# robot_localization EKF：融合輪速里程計 + IMU（Phase 0）。
+# 策略：輪速只信「前進速度 vx」；航向交給 IMU 的「角速度 vyaw」，由 EKF 自行積分。
+#   這正好對應研究故事——純輪速航向會發散，用 IMU 陀螺儀修正。
+#
+# ⚠ 2026-07-10：imu0 的絕對航向 yaw 已停用（第 6 位改 false），原因見下。
+#   STM32 韌體對 yaw 積分時套了 0.8 deg/s 死區，會把「緩慢轉向」整段丟掉，
+#   只留下行進中的快速抖動 -> 實測推車一趟真值 -7.9 度、韌體積出 +2.3 度（連號都反）。
+#   而 /imu/data 的 angular_velocity.z 是**未過死區**的原始值，實測積分 -7.9 度、
+#   與編碼器差速的 -8.0 度僅差 0.1 度。故改用 vyaw，繞過死區。
+#   附帶好處：EKF 從 0 起算航向，不再受「STM32 上電後 yaw 持續累積」影響
+#   （雙車 demo 原本得靠兩台同時斷電重上電來規避，見 docs/design/v2v_architecture.md）。
+# 輸入：/odom (nav_msgs/Odometry, 來自 stm32_bridge)
+#       /imu/data (sensor_msgs/Imu, 來自 stm32_bridge)
+# 輸出：/odometry/filtered + TF odom->base_link
+#   ⚠ EKF 接手發 odom->base_link，所以 stm32_bridge 要 publish_tf:=false。
+#
+# 頂層 key 用 `/**`（萬用節點）而非 `ekf_filter_node`：放進 namespace 後節點全名會變成
+#   /car1/ekf_filter_node，與寫死的 `ekf_filter_node:` 對不上 -> 參數整份靜默不載入
+#   （EKF 會用預設值跑，two_d_mode/odom0/imu0 全失效，症狀是「有節點沒輸出」）。
+#   `/**` 對單車（根命名空間）與 /car1、/car2 一體適用。見 docs/design/v2v_architecture.md V0。
+/**:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.2
+    two_d_mode: true            # 地面車，鎖 z/roll/pitch
+    publish_tf: true
+    print_diagnostics: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # --- 輪速里程計：只取前進速度 vx ---
+    odom0: odom
+    # 順序: x y z / roll pitch yaw / vx vy vz / vroll vpitch vyaw / ax ay az
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+
+    # --- IMU：只取角速度 vyaw（絕對航向 yaw 因韌體死區汙染而停用，見檔頭）---
+    imu0: imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: false   # 韌體沒送線加速度

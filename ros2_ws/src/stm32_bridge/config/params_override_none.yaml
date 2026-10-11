@@ -1,0 +1,7 @@
+# 空的參數覆蓋層（EX3，2026-08-11）。
+#
+# nav2.launch.py 的 extra_params_file 預設值。ROS2 的 parameters 列表是「後者覆蓋前者」，
+# 但列表元素不能是空字串或 None，所以需要一個什麼都不改的合法 yaml 當預設。
+# 探索模式會把它換成 nav2_params_explore.yaml（限速 0.25 m/s）。
+/**:
+  ros__parameters: {}

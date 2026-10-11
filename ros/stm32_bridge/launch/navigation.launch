@@ -1,0 +1,51 @@
+<launch>
+  <!-- 1. 載入地圖 -->
+  <!-- 請確認 maps 資料夾下真的有 my_room.yaml -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find stm32_bridge)/maps/my_room.yaml"/>
+
+  <!-- 2. AMCL 定位系統 -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic" value="true"/>
+    <param name="odom_model_type" value="diff"/>
+    <param name="odom_alpha5" value="0.1"/>
+    <param name="gui_publish_rate" value="10.0"/>
+    <param name="laser_max_beams" value="60"/>
+    <param name="min_particles" value="500"/>
+    <param name="max_particles" value="2000"/>
+    <param name="kld_err" value="0.05"/>
+    <param name="kld_z" value="0.99"/>
+    <param name="odom_alpha1" value="0.2"/>
+    <param name="odom_alpha2" value="0.2"/>
+    <param name="odom_alpha3" value="0.2"/>
+    <param name="odom_alpha4" value="0.2"/>
+    <param name="laser_z_hit" value="0.5"/>
+    <param name="laser_z_short" value="0.05"/>
+    <param name="laser_z_max" value="0.05"/>
+    <param name="laser_z_rand" value="0.5"/>
+    <param name="laser_sigma_hit" value="0.2"/>
+    <param name="laser_lambda_short" value="0.1"/>
+    <param name="laser_model_type" value="likelihood_field"/>
+    <param name="laser_likelihood_max_dist" value="2.0"/>
+    <param name="update_min_d" value="0.1"/>
+    <param name="update_min_a" value="0.2"/>
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="base_link"/>
+    <param name="resample_interval" value="1"/>
+    <param name="transform_tolerance" value="0.5"/>
+    <param name="recovery_alpha_slow" value="0.0"/>
+    <param name="recovery_alpha_fast" value="0.0"/>
+  </node>
+
+  <!-- 3. Move Base 導航核心 (載入 TEB 規劃器) -->
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
+    <param name="controller_frequency" value="5.0" /> 
+
+    <!-- 載入參數檔 -->
+    <rosparam file="$(find stm32_bridge)/config/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find stm32_bridge)/config/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find stm32_bridge)/config/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find stm32_bridge)/config/global_costmap_params.yaml" command="load" />
+    <rosparam file="$(find stm32_bridge)/config/teb_local_planner_params.yaml" command="load" />
+  </node>
+</launch>

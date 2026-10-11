@@ -1,0 +1,50 @@
+# 探索模式的 Nav2 參數覆蓋層（EX3，2026-08-11）。
+#
+# ⚠ 這**不是**完整參數檔，是疊在 `nav2_params.yaml` 上面的覆蓋層。
+#   explore.launch.py 會依序傳兩個檔給節點（後者覆蓋前者），所以這裡只寫「探索時要改的」。
+#   刻意不複製整份 nav2_params.yaml——兩份大檔各自演化就是不同步漏洞的溫床
+#   （CM2 已經在 merge_math 上吃過一次重複邏輯的虧）。
+#
+# **限速是唯一機制，寫死在這裡**：探索時車自己在跑、人只在旁邊看，速度必須比遙控時更保守。
+#   0.35（一般導航）→ 0.25 m/s。
+#   EX4 實車驗收要求「FBK 輪速全程 ≤0.28 m/s」（0.25 + 量測餘裕）。
+#
+# ⚠ **驗收只能看 FBK 輪速，不能看 /odometry/filtered 的 twist**：
+#   2026-08-11 EX1 實測，同一趟 EKF 估計最大 0.470 m/s、實際輪速只有 0.321 m/s
+#   （EKF 在加速段會高估三成）。看錯來源會誤判成超速 FAIL。
+#
+# 頂層 key 沿用 nav2_params.yaml 的慣例（寫節點名，非萬用 `/**`）：nav2 節點不接受
+# 未宣告參數，用 `/**` 會把 FollowPath 這種子參數灌給每個節點而啟動失敗。
+# 單車版在根命名空間，故可行；雙車化時兩份都要一起改（見 nav2_params.yaml 檔頭）。
+
+controller_server:
+  ros__parameters:
+    FollowPath:
+      desired_linear_vel: 0.25
+
+# ---------------------------------------------------------------------------
+# 膨脹半徑（2026-08-30 EX4 首跑實測補上）
+#
+# **主設定檔的 0.25 小於車的外接半徑 0.318**（footprint 前 0.28／半寬 0.12
+# ⇒ sqrt(0.28²+0.12²)=0.305，Nav2 加上邊距後報 0.3178）。Nav2 會一直警告
+# 「inflation radius 小於 circumscribed radius，SE2 碰撞檢查無法用位能場加速」，
+# EX4 首跑此警告出現 **142 次**、規劃失敗「no valid path found」**28 次**
+# ⇒ 8 個目標全被打入黑名單 ⇒ 明明還有 15 個邊界叢集，explorer 卻宣告
+# 「no reachable frontier left」提早收工，覆蓋率只有 46.7%（判準要 ≥70%）。
+#
+# **為什麼改在覆寫層而不是主檔**：主檔的 0.25 是當初為 4 m 小房間折衷出來的
+# （檔內註解有記），改大可能讓小房間處處不可通行、連累 EX1。探索在客廳跑，
+# 獨立調整，互不影響。
+#
+# **附帶好處**：0.35 會把家具腳之間的窄縫整個灌成不可通行，車就不會再試圖
+# 鑽進椅子底下——EX4 首跑車自己開到椅子下卡住，正是規劃失敗的現場原因。
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      inflation_layer:
+        inflation_radius: 0.35
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      inflation_layer:
+        inflation_radius: 0.35

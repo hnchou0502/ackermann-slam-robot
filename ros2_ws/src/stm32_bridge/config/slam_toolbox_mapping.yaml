@@ -1,0 +1,35 @@
+# slam_toolbox 線上建圖參數（EX1「建圖中導航」用；2026-08-11 建立）
+#
+# ⚠ 這是**最小參數集**，刻意只覆寫五個 frame/topic/模式參數，其餘全部沿用
+#   slam_toolbox 節點的內建預設值。理由：RM1 離線驗收（tools/map_from_bag.sh）
+#   跑出 94.7% 牆連貫度的那組設定，就是「只給這五個 -p、其餘用內建預設」。
+#   官方 config/mapper_params_online_async.yaml 有數十個調校項，其值未必等同
+#   節點內建預設——整包照抄等於一次引入一堆沒驗證過的變因。要調參請一項一項加，
+#   並在此註明改動理由與實測前後對照（專案規矩：門檻/數值不許拍腦袋）。
+#
+# ⚠ base_frame 是本車與官方預設唯一實質差異：官方寫 base_footprint，
+#   但本車 TF 樹是 map → odom → base_link → laser_frame，沒有 base_footprint。
+#   寫錯這一項＝slam_toolbox 查不到 TF、完全建不了圖。
+#
+# 頂層 key 用萬用 `/**`（不是 `slam_toolbox:`）——專案地雷 2026-07-10：
+#   yaml 頂層寫死節點名，一進 namespace 就整份靜默失效。
+/**:
+  ros__parameters:
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    mode: mapping
+
+    # 以下兩項是 2026-08-11 EX1 首次實跑時，slam_toolbox 自己在 log 裡抱怨才補上的
+    # （實測依據，非拍腦袋調參）：
+    #
+    # ① 節點內建預設 25.0 m 超過 C1 的實際量程 16 m，啟動時 WARN：
+    #      "maximum laser range setting (25.0 m) exceeds the capabilities of the used Lidar (16.0 m)"
+    #    設成量程本身，避免 16 m 以外的空白被當成「已知的空地」做光線追蹤。
+    max_laser_range: 16.0
+    #
+    # ② 未宣告時每 15 秒噴一次 WARN："parameter 'stack_size_to_use' is not initialized"。
+    #    這是序列化姿態圖（存 .posegraph）時要用的執行緒堆疊大小，值取官方預設。
+    #    RM 線（二遍續建）要呼叫 serialize_map，地圖一大就會踩到，先補起來。
+    stack_size_to_use: 40000000

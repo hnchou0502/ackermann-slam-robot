@@ -1,0 +1,36 @@
+﻿# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Office temp lock files
+~$*
+
+# Editor / build
+.vscode/
+*.tmp
+
+# STM32CubeIDE build output (regenerable)
+firmware/Debug/
+firmware/Release/
+*.o
+*.d
+*.elf
+*.map
+*.list
+
+# ROS2 colcon build output (regenerable)
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# 實機資料（rosbag/大檔，離機備份用，不進 git；見 T11）
+# ⚠ 前面的斜線是必要的：不寫成 /data/ 的話，任何層級名叫 data 的目錄都會被排除，
+#    連 test/data/ 底下的小型回歸樣本都會被靜默吃掉（2026-08-29 踩到）。
+/data/
+*.mcap
+firmware/.settings/language.settings.xml

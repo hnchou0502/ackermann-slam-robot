@@ -1,0 +1,5 @@
+# SLAM 自走車固定序列埠命名 (2026-06-28)
+# 安裝：sudo cp 99-slamcar.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+# 效果：STM32→/dev/stm32、YDLIDAR→/dev/ydlidar，皆 0666（免 chmod）。不設的話多裝置時 ttyUSBx 編號會亂跳。
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="ydlidar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="stm32", MODE="0666"

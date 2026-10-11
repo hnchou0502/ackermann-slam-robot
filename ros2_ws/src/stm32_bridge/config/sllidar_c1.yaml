@@ -1,0 +1,25 @@
+# RPLIDAR C1（car1，2026-07-20 上線，取代 YDLIDAR X4）
+#
+# 驅動＝Slamtec 官方 sllidar_ros2（github.com/Slamtec/sllidar_ros2，Pi 上 source build）。
+# ⚠ apt 的 ros-jazzy-rplidar-ros 2.1.0 只帶 A1/A2/A3/S1，**不支援 C1**（2026-07-20 實查
+#   /opt/ros/jazzy/share/rplidar_ros/launch/ 無 c1 檔）——car2 的 A1M8 用 apt 那包，car1 的 C1 不行。
+#
+# ⚠ 頂層 key 必須是 `/**`（不是節點名），否則加 namespace:=car1 後參數會**靜默不載入**、
+#   節點照跑但全用預設值（2026-07-10 踩過，見 CLAUDE.md 資料地雷）。
+#
+# 驗貨實測（2026-07-20，裸協定 + 驅動啟動訊息）：
+#   model=0x41（C1 系列）、firmware 1.02、hardware 18、health OK
+#   Standard 模式：sample rate 5 kHz、max_distance 16.0 m、scan frequency 10.0 Hz
+#   /scan 實測：10.02 Hz、720 點/圈（0.501°/點）、有效點 95.4%
+/**:
+  ros__parameters:
+    channel_type: serial
+    # udev 固定名（99-slamcar.rules）。C1 與舊 X4 同為 CP2102 10c4:ea60，
+    # 故該條規則同時給 ydlidar 與 rplidar 兩個名字；此處用 rplidar（Slamtec 家族，與 car2 一致）。
+    serial_port: /dev/rplidar
+    # ⚠ C1 是 460800，不是 A1 的 115200。給錯值＝GET_INFO 無回應，看起來像光達壞掉。
+    serial_baudrate: 460800
+    frame_id: laser_frame
+    inverted: false
+    angle_compensate: true
+    scan_mode: Standard

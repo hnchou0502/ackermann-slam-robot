@@ -1,0 +1,11 @@
+# RPLIDAR A1M8（car2）driver 參數。
+# ⚠ 頂層 key 一律 /**:（寫死節點名在 namespace 下會靜默失效，見 CLAUDE.md 資料地雷 2026-07-10）。
+# ⚠ apt 版 rplidar_ros 的 rplidar.launch.py 參數全寫死、CLI 覆蓋會被無視（2026-07-17 踩坑），
+#    所以 bringup 直接起 rplidar_composition 節點＋餵本檔，不走官方 launch。
+/**:
+  ros__parameters:
+    serial_port: /dev/rplidar        # udev 固定名（10c4:ea60），別用 ttyUSBx
+    serial_baudrate: 115200          # A1M8 固定 115200（256000 是 A3，實測不回話）
+    frame_id: laser_frame
+    inverted: false
+    angle_compensate: true           # 2026-07-17 驗收配置：/scan 7.3Hz、720 點/圈、有效 88%
